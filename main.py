@@ -45,9 +45,9 @@ def parse_gprmc(line):
         speed = 0.0
     
     try:
-        heading = float(course) if course else 0.0
+        heading = float(course) if course else None
     except:
-        heading = 0.0
+        heading = None
     
     try:
         dt = datetime.strptime(date_str + time_str.split('.')[0], '%d%m%y%H%M%S')
@@ -104,7 +104,71 @@ def read_gps_file(filename):
     
     return points
 
-def generate_kml(points, output_filename):
+def normalize_angle(angle):
+    while angle < 0:
+        angle += 360
+    while angle >= 360:
+        angle -= 360
+    return angle
+
+def angle_difference(prev_heading, curr_heading):
+    prev = normalize_angle(prev_heading)
+    curr = normalize_angle(curr_heading)
+    
+    diff = curr - prev
+    
+    if diff < -180:
+        diff += 360
+    elif diff > 180:
+        diff -= 360
+    
+    return diff
+
+def detect_stops_and_turns(points):
+    stops = []
+    turns = []
+    
+    speed_threshold = 1.0
+    min_speed_for_heading = 5.0
+    turn_threshold = 25
+    window_size = 10
+    
+    for i in range(len(points)):
+        if points[i]['speed'] < speed_threshold:
+            if i > 0 and points[i-1]['speed'] >= speed_threshold:
+                stops.append(i)
+    
+    for i in range(window_size, len(points)):
+        avg_speed = sum(p['speed'] for p in points[i-window_size:i+1]) / (window_size + 1)
+        
+        if avg_speed < min_speed_for_heading:
+            continue
+        
+        start_idx = i - window_size
+        
+        if points[start_idx]['heading'] is None or points[i]['heading'] is None:
+            continue
+        
+        moving_points = [p for p in points[start_idx:i+1] if p['speed'] > min_speed_for_heading and p['heading'] is not None]
+        
+        if len(moving_points) < 3:
+            continue
+        
+        total_turn = angle_difference(moving_points[0]['heading'], moving_points[-1]['heading'])
+        
+        if total_turn < -turn_threshold:
+            already_marked = False
+            for t in turns:
+                if abs(t - i) < window_size:
+                    already_marked = True
+                    break
+            
+            if not already_marked:
+                turns.append(i)
+    
+    return stops, turns
+
+def generate_kml(points, stops, turns, output_filename):
     if not points:
         print("No points to generate KML")
         return
@@ -116,37 +180,94 @@ def generate_kml(points, output_filename):
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>
 <name>GPS Track</name>
-<Placemark>
+<Style id="yellowLine">
+<LineStyle>
+<color>7f00ffff</color>
+<width>4</width>
+</LineStyle>
+</Style>
+<Style id="redStop">
+<IconStyle>
+<color>ff0000ff</color>
+<scale>1.2</scale>
+<Icon>
+<href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href>
+</Icon>
+</IconStyle>
+</Style>
+<Style id="yellowTurn">
+<IconStyle>
+<color>ff00ffff</color>
+<scale>1.2</scale>
+<Icon>
+<href>http://maps.google.com/mapfiles/kml/paddle/ylw-blank.png</href>
+</Icon>
+</IconStyle>
+</Style>
+'''
+    
+    kml_path = '''<Placemark>
 <name>Route</name>
+<styleUrl>#yellowLine</styleUrl>
 <LineString>
 <tessellate>1</tessellate>
 <coordinates>
 '''
     
-    kml_coords = ''
     for point in points:
-        kml_coords += f"{point['lon']:.7f},{point['lat']:.7f},3\n"
+        kml_path += f"{point['lon']:.7f},{point['lat']:.7f},3\n"
     
-    kml_footer = '''</coordinates>
+    kml_path += '''</coordinates>
 </LineString>
 </Placemark>
-</Document>
+'''
+    
+    stop_placemarks = ''
+    for idx in stops:
+        point = points[idx]
+        stop_placemarks += f'''<Placemark>
+<name>Stop</name>
+<styleUrl>#redStop</styleUrl>
+<Point>
+<coordinates>{point['lon']:.7f},{point['lat']:.7f},3</coordinates>
+</Point>
+</Placemark>
+'''
+    
+    turn_placemarks = ''
+    for idx in turns:
+        point = points[idx]
+        turn_placemarks += f'''<Placemark>
+<name>Left Turn</name>
+<styleUrl>#yellowTurn</styleUrl>
+<Point>
+<coordinates>{point['lon']:.7f},{point['lat']:.7f},3</coordinates>
+</Point>
+</Placemark>
+'''
+    
+    kml_footer = '''</Document>
 </kml>'''
     
     with open(output_filename, 'w') as f:
         f.write(kml_header)
-        f.write(kml_coords)
+        f.write(kml_path)
+        f.write(stop_placemarks)
+        f.write(turn_placemarks)
         f.write(kml_footer)
 
 def process_gps_file(input_file):
-    print(f"Processing {input_file}...")
+    print(f"Processing {input_file} ")
     
     points = read_gps_file(input_file)
     print(f"Read {len(points)} points")
     
+    stops, turns = detect_stops_and_turns(points)
+    print(f"Detected {len(stops)} stops and {len(turns)} left turns")
+    
     base_name = os.path.splitext(os.path.basename(input_file))[0]
     output_file = f"{base_name}.kml"
-    generate_kml(points, output_file)
+    generate_kml(points, stops, turns, output_file)
     print(f"Generated {output_file}")
     print()
 
