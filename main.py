@@ -92,7 +92,7 @@ def parse_gpgga(line):
 
 def read_gps_file(filename):
     points = []
-    with open(filename, 'r') as f:
+    with open(filename, 'r', encoding='latin-1') as f:
         for line in f:
             line = line.strip()
             if not line or not line.startswith('$GP'):
