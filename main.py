@@ -1,3 +1,6 @@
+# Jacky Chan and Ethan Chang
+# CSCI 420 Project
+
 import os
 import glob
 from datetime import datetime
