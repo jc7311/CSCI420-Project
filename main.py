@@ -5,6 +5,40 @@ import os
 import glob
 from datetime import datetime
 
+
+def calculate_trip_duration(points):
+    if not points:
+        print("No points available")
+        return
+    
+    # Ensure we have datetime objects
+    start_dt = points[0]['datetime']
+    finish_dt = points[-1]['datetime']
+    
+    # If they're strings, parse them
+    if isinstance(start_dt, str):
+        start_dt = datetime.fromisoformat(start_dt)
+    if isinstance(finish_dt, str):
+        finish_dt = datetime.fromisoformat(finish_dt)
+    
+    print(f"Start type: {type(start_dt)}, Finish type: {type(finish_dt)}")
+    
+    duration = finish_dt - start_dt
+    print(f"Trip Duration: {duration}")
+
+    total_seconds = duration.total_seconds()
+    total_minutes = total_seconds / 60
+    total_hours = total_seconds / 3600
+
+    print(f"Trip Duration in Seconds: {total_seconds:.2f} seconds")
+    print(f"Trip Duration in Minutes: {total_minutes:.2f} minutes")
+    print(f"Trip Duration in Hours: {total_hours:.2f} hours")
+    print(f"Trip started at: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Trip finished at: {finish_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Duration in total seconds: {total_seconds} seconds")
+    print(f"Duration in total minutes: {total_minutes} minutes")
+    print(f"Duration in total hours: {total_hours} hours")
+
 def parse_nmea_coordinate(coord_str, direction):
     if not coord_str or not direction:
         return None
@@ -53,6 +87,7 @@ def parse_gprmc(line):
         heading = None
     
     try:
+        # Starting date time parsing
         dt = datetime.strptime(date_str + time_str.split('.')[0], '%d%m%y%H%M%S')
     except:
         dt = None
@@ -62,7 +97,7 @@ def parse_gprmc(line):
         'lon': lon,
         'speed': speed,
         'heading': heading,
-        'datetime': dt
+        'datetime': dt # datetime object or None
     }
 
 def parse_gpgga(line):
@@ -275,6 +310,8 @@ def process_gps_file(input_file):
     generate_kml(points, stops, turns, output_file)
     print(f"Generated {output_file}")
     print()
+
+    calculate_trip_duration(points)
 
 def main():
 
