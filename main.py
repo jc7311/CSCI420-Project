@@ -95,6 +95,8 @@ def read_gps_file(filename):
     with open(filename, 'r', encoding='latin-1') as f:
         for line in f:
             line = line.strip()
+
+            # Filter NMEA lines
             if not line or not line.startswith('$GP'):
                 continue
             
@@ -275,6 +277,8 @@ def process_gps_file(input_file):
     print()
 
 def main():
+
+    # Reads GPS files from Some_Example_GPS_Files/ and processes them
     gps_files = glob.glob("Some_Example_GPS_Files/*.txt")
     
     if not gps_files:
