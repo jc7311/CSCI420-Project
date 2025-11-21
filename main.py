@@ -16,6 +16,9 @@ from datetime import datetime
 
 def calculate_trip_duration(points):
     if not points:
+
+        # If the list is empty, there is no trip data to analyze
+
         print("No points available")
         return
     
@@ -31,11 +34,17 @@ def calculate_trip_duration(points):
     
     print(f"Start type: {type(start_dt)}, Finish type: {type(finish_dt)}")
     
+    # Compute the duration as a timedelta (end time minus start time)
     duration = finish_dt - start_dt
     print(f"Trip Duration: {duration}")
-
+   
+    # Convert total duration into seconds as a float
     total_seconds = duration.total_seconds()
+
+    # Convert seconds to minutes
     total_minutes = total_seconds / 60
+
+    # Convert seconds to hours
     total_hours = total_seconds / 3600
 
     print(f"Trip Duration in Seconds: {total_seconds:.2f} seconds")
@@ -53,18 +62,30 @@ def parse_nmea_coordinate(coord_str, direction):
     direction: 'N', 'S', 'E', 'W'
     """
 
+    # If the coordinate string or direction is missing, we cannot parse it
     if not coord_str or not direction:
 
         return None
     
     try:
 
+        # Convert the coordinate string to a float, e.g. "4307.1234"
         coord_float = float(coord_str)
+
+        # Extract degrees and minutes
         degrees = int(coord_float / 100)
+
+        # Extract minutes
         minutes = coord_float - (degrees * 100)
+
+        # Convert to decimal degrees
         decimal = degrees + (minutes / 60)
+
+        # Apply negative sign for South and West directions
         if direction in ['S', 'W']:
+
             decimal = -decimal
+
         return decimal
     
     except:
@@ -78,22 +99,28 @@ def parse_gprmc(line):
     Returns a dictionary or None if invalid.
     (time_str, lat_str, lat_dir, lon_str, lon_dir, speed_knots, course, date_str)
     """
+    
+    # Split the NMEA sentence by commas into its fields    
     parts = line.strip().split(',')
+
     if len(parts) < 10 or parts[2] != 'A':
+
         return None
     
-    time_str = parts[1]
-    lat_str = parts[3]
-    lat_dir = parts[4]
-    lon_str = parts[5]
-    lon_dir = parts[6]
-    speed_knots = parts[7]
-    course = parts[8]
-    date_str = parts[9]
+    # Extract individual fields by their positions in the GPRMC sentence
+    time_str = parts[1]      # UTC time (hhmmss.sss)
+    lat_str = parts[3]       # Latitude in NMEA format (DDMM.MMMM)
+    lat_dir = parts[4]       # Latitude direction 'N' or 'S'
+    lon_str = parts[5]       # Longitude in NMEA format (DDDMM.MMMM)
+    lon_dir = parts[6]       # Longitude direction 'E' or 'W'
+    speed_knots = parts[7]   # Speed over ground in knots
+    course = parts[8]        # Course over ground (heading) in degrees
+    date_str = parts[9]      # Date (ddmmyy)
     
     if not all([time_str, lat_str, lat_dir, lon_str, lon_dir, date_str]):
         return None
     
+    # Convert NMEA latitude and longitude to decimal degrees
     lat = parse_nmea_coordinate(lat_str, lat_dir)
     lon = parse_nmea_coordinate(lon_str, lon_dir)
     
@@ -101,6 +128,7 @@ def parse_gprmc(line):
         return None
     
     try:
+        # Convert speed from string to float; if empty, default to 0.0
         speed = float(speed_knots) if speed_knots else 0.0
     except:
         speed = 0.0
@@ -116,12 +144,13 @@ def parse_gprmc(line):
     except:
         dt = None
     
+    # Return a dictionary representing this GPS point
     return {
-        'lat': lat,
-        'lon': lon,
-        'speed': speed,
-        'heading': heading,
-        'datetime': dt # datetime object or None
+        'lat': lat,          # Latitude in decimal degrees
+        'lon': lon,          # Longitude in decimal degrees
+        'speed': speed,      # Speed in knots
+        'heading': heading,  # Heading in degrees (may be None)
+        'datetime': dt       # datetime object or None
     }
 
 def parse_gpgga(line):
@@ -130,25 +159,33 @@ def parse_gpgga(line):
     Extract latitude and longitude.
     Returns a dictionary or None if invalid.
     """
+
+    # Split the GPGGA sentence into comma-separated fields
     parts = line.strip().split(',')
+
     if len(parts) < 10:
         return None
     
+    # Time is present but not used here; kept for reference
     time_str = parts[1]
+    # Latitude string and direction
     lat_str = parts[2]
     lat_dir = parts[3]
+    # Longitude string and direction
     lon_str = parts[4]
     lon_dir = parts[5]
     
     if not all([lat_str, lat_dir, lon_str, lon_dir]):
         return None
     
+    # Convert NMEA coordinates into decimal degrees
     lat = parse_nmea_coordinate(lat_str, lat_dir)
     lon = parse_nmea_coordinate(lon_str, lon_dir)
     
     if lat is None or lon is None:
         return None
     
+    # Return coordinates as a simple dictionary
     return {
         'lat': lat,
         'lon': lon
@@ -160,22 +197,32 @@ def read_gps_file(filename):
     Uses GPRMC to track points.
     Returns a list of points with lat, lon, speed, heading, datetime.
     """
-    points = []
+
+    points = []  # List to store all parsed GPS points
+
+    # Open the file in read mode, using latin-1 encoding to handle special characters
     with open(filename, 'r', encoding='latin-1') as f:
+        
         for line in f:
+            # Remove leading/trailing whitespace from the line
             line = line.strip()
 
-            # Filter NMEA lines
+            # Skip empty lines or lines that do not start with "$GP" (non-NMEA)
             if not line or not line.startswith('$GP'):
                 continue
             
+            # If the line is a GPRMC sentence, we parse it for full GPS data
             if line.startswith('$GPRMC'):
                 data = parse_gprmc(line)
+                # Only add the point if parsing was successful (data is not None)
                 if data:
                     points.append(data)
+            # If the line is GPGGA, we could parse it for backup, but here we ignore it
             elif line.startswith('$GPGGA'):
                 data = parse_gpgga(line)
+                # Currently not used to build points; could be extended if needed
     
+    # Return the list of parsed GPS points
     return points
 
 def normalize_angle(angle):
@@ -193,9 +240,13 @@ def angle_difference(prev_heading, curr_heading):
     """
     Computer shortest signed angular defference between two ehadings.
     """
+
+    # Normalize previous heading into [0, 360)
     prev = normalize_angle(prev_heading)
+    # Normalize current heading into [0, 360)
     curr = normalize_angle(curr_heading)
     
+    # Initial difference is current minus previous
     diff = curr - prev
     
     if diff < -180:
@@ -212,40 +263,56 @@ def detect_stops_and_turns(points):
     - Left Turns: average speed > 5 knots and cumulative left turn > 25 degrees
     Returns two lists: stop indices and left turn indices.
     """
-    stops = []
-    turns = []
+
+    stops = []  # List of indices in 'points' where stops occur
+    turns = []  # List of indices in 'points' where left turns occur
     
+    # Speed threshold (knots) below which we consider the car stopped
     speed_threshold = 1.0
+    # Minimum average speed (knots) in window for heading-based turn detection
     min_speed_for_heading = 5.0
+    # Minimum cumulative left-turn angle (degrees) to flag a left turn
     turn_threshold = 25
+    # Number of points in the sliding window used to detect turns
     window_size = 10
-    
+
     for i in range(len(points)):
+        # Check if current point is below the stop speed threshold
         if points[i]['speed'] < speed_threshold:
+            # To avoid marking repeated stops, only flag when coming from moving state
             if i > 0 and points[i-1]['speed'] >= speed_threshold:
+                # Record the index where the car transitions to a stop
                 stops.append(i)
     
     for i in range(window_size, len(points)):
+
+        # Compute average speed in the sliding window [i - window_size, i]
         avg_speed = sum(p['speed'] for p in points[i-window_size:i+1]) / (window_size + 1)
         
         if avg_speed < min_speed_for_heading:
             continue
         
+        # Index of the first point in the window
         start_idx = i - window_size
         
         if points[start_idx]['heading'] is None or points[i]['heading'] is None:
             continue
         
+        # Filter only points in the window where the car is moving fast enough
+        # and have a valid heading
         moving_points = [p for p in points[start_idx:i+1] if p['speed'] > min_speed_for_heading and p['heading'] is not None]
         
         if len(moving_points) < 3:
             continue
-        
+
+        # Compute total heading change from the first to last point in this moving subset
         total_turn = angle_difference(moving_points[0]['heading'], moving_points[-1]['heading'])
         
         if total_turn < -turn_threshold:
+            # Check if we have already marked a nearby turn to avoid duplicates
             already_marked = False
             for t in turns:
+                # If an existing turn index is within the window, treat as duplicate
                 if abs(t - i) < window_size:
                     already_marked = True
                     break
