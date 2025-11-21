@@ -1,5 +1,13 @@
-# Jacky Chan and Ethan Chang
-# CSCI 420 Project
+# CSCI 420 - GPS Processing Project
+# @authors: Jacky Chan and Ethan Chang
+
+#   Reads GPS NMEA data, parses coordinates, detects stops and left turns,
+#   and generates a KML file with route and  markers.
+
+# Instructions:
+#   Place GPS files in Some_Example_GPS_Files/
+#   Run with: python3 main.py
+
 
 import os
 import glob
@@ -40,9 +48,17 @@ def calculate_trip_duration(points):
     print(f"Duration in total hours: {total_hours} hours")
 
 def parse_nmea_coordinate(coord_str, direction):
+    """
+    Converts NMEA coordinate format to decimal degrees. (DDMM.MMMM)
+    direction: 'N', 'S', 'E', 'W'
+    """
+
     if not coord_str or not direction:
+
         return None
+    
     try:
+
         coord_float = float(coord_str)
         degrees = int(coord_float / 100)
         minutes = coord_float - (degrees * 100)
@@ -50,10 +66,18 @@ def parse_nmea_coordinate(coord_str, direction):
         if direction in ['S', 'W']:
             decimal = -decimal
         return decimal
+    
     except:
+
         return None
 
 def parse_gprmc(line):
+    """
+    Parse a $GPRMC sentence.
+    Extract latitude, longitude, speed (knots), heading, and datetime.
+    Returns a dictionary or None if invalid.
+    (time_str, lat_str, lat_dir, lon_str, lon_dir, speed_knots, course, date_str)
+    """
     parts = line.strip().split(',')
     if len(parts) < 10 or parts[2] != 'A':
         return None
@@ -101,6 +125,11 @@ def parse_gprmc(line):
     }
 
 def parse_gpgga(line):
+    """
+    Parse a $GPGGA sentence.
+    Extract latitude and longitude.
+    Returns a dictionary or None if invalid.
+    """
     parts = line.strip().split(',')
     if len(parts) < 10:
         return None
@@ -126,6 +155,11 @@ def parse_gpgga(line):
     }
 
 def read_gps_file(filename):
+    """
+    Read GPS .txt file line by line.
+    Uses GPRMC to track points.
+    Returns a list of points with lat, lon, speed, heading, datetime.
+    """
     points = []
     with open(filename, 'r', encoding='latin-1') as f:
         for line in f:
@@ -145,6 +179,10 @@ def read_gps_file(filename):
     return points
 
 def normalize_angle(angle):
+    """
+    Normalize heading angle to [0, 360) degrees.
+    Prevent negative angles and angles >= 360.
+    """
     while angle < 0:
         angle += 360
     while angle >= 360:
@@ -152,6 +190,9 @@ def normalize_angle(angle):
     return angle
 
 def angle_difference(prev_heading, curr_heading):
+    """
+    Computer shortest signed angular defference between two ehadings.
+    """
     prev = normalize_angle(prev_heading)
     curr = normalize_angle(curr_heading)
     
@@ -165,6 +206,12 @@ def angle_difference(prev_heading, curr_heading):
     return diff
 
 def detect_stops_and_turns(points):
+    """
+    Analyze GPS points to detect:
+    - Stops: speed < 1 knot
+    - Left Turns: average speed > 5 knots and cumulative left turn > 25 degrees
+    Returns two lists: stop indices and left turn indices.
+    """
     stops = []
     turns = []
     
@@ -209,6 +256,13 @@ def detect_stops_and_turns(points):
     return stops, turns
 
 def generate_kml(points, stops, turns, output_filename):
+    """
+    Create KML file containing:
+        - Route as a LineString
+        - Stop markers as red icons
+        - Left turn markers as yellow icons
+    Save output file into .kml file
+    """
     if not points:
         print("No points to generate KML")
         return
@@ -297,6 +351,13 @@ def generate_kml(points, stops, turns, output_filename):
         f.write(kml_footer)
 
 def process_gps_file(input_file):
+    """
+    Find all GPS files in specified folder and process each one.
+    For each file:
+        - Read and parse GPS data
+        - Detect stops and left turns
+        - Generate KML file with route and markers
+    """
     print(f"Processing {input_file} ")
     
     points = read_gps_file(input_file)
