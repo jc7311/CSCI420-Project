@@ -14,6 +14,50 @@ import glob
 from datetime import datetime
 
 
+def trim_stationary_edges(points):
+    """
+    Remove leading and trailing GPS points where the vehicle is not moving
+    (speed < speed_threshold). Returns a sliced list of points.
+    """
+
+    if not points:
+        return points
+
+    n = len(points)
+    first_moving = None
+    last_moving = None
+
+    # Find first index where speed >= threshold
+    for i in range(n):
+
+        if points[i].get('speed', 0.0) >= 1.0:
+
+            first_moving = i
+
+            break
+
+    # Find last index where speed >= threshold
+    for j in range(n - 1, -1, -1):
+
+        if points[j].get('speed', 0.0) >= 1.0:
+
+            last_moving = j
+
+            break
+
+    # If we never found any moving point, just return original or empty
+    if first_moving is None or last_moving is None:
+        print("Trip appears to have no movement (all points stationary).")
+        return points
+
+    if first_moving > 0 or last_moving < n - 1:
+        print(f"Trimming {first_moving} leading stationary points "
+              f"and {n - 1 - last_moving} trailing stationary points.")
+    
+    # Return only the moving portion of the trip 
+    return points[first_moving:last_moving + 1]
+
+
 def calculate_trip_duration(points):
     if not points:
 
@@ -22,9 +66,23 @@ def calculate_trip_duration(points):
         print("No points available")
         return
     
-    # Ensure we have datetime objects
-    start_dt = points[0]['datetime']
-    finish_dt = points[-1]['datetime']
+    # Find the first point with a valid datetime
+    start_dt = None
+    for p in points:
+        if p.get('datetime') is not None:
+            start_dt = p['datetime']
+            break
+
+    # Find the last point with a valid datetime
+    finish_dt = None
+    for p in reversed(points):
+        if p.get('datetime') is not None:
+            finish_dt = p['datetime']
+            break
+
+    if start_dt is None or finish_dt is None:
+        print("Cannot compute trip duration: missing datetime at start or end.")
+        return
     
     # If they're strings, parse them
     if isinstance(start_dt, str):
@@ -101,6 +159,7 @@ def parse_gprmc(line):
     """
     
     # Split the NMEA sentence by commas into its fields    
+    # Example: $GPRMC,144904.500,A,4308.4726,N,07726.4348,W,0.16,53.46,010525,,,A*42
     parts = line.strip().split(',')
 
     if len(parts) < 10 or parts[2] != 'A':
@@ -161,6 +220,7 @@ def parse_gpgga(line):
     """
 
     # Split the GPGGA sentence into comma-separated fields
+    # Example: $GPGGA,144904.750,4308.4726,N,07726.4349,W,1,05,1.80,162.6,M,-34.4,M,,*57
     parts = line.strip().split(',')
 
     if len(parts) < 10:
@@ -428,6 +488,8 @@ def process_gps_file(input_file):
     print(f"Processing {input_file} ")
     
     points = read_gps_file(input_file)
+    points = trim_stationary_edges(points)
+
     print(f"Read {len(points)} points")
     
     stops, turns = detect_stops_and_turns(points)
@@ -452,6 +514,12 @@ def main():
     
     for gps_file in gps_files:
         process_gps_file(gps_file)
+
+    #print('test')
+    #print(f"Read {len(gps_files)} GPS files.")
+
+    #print(f"Points after trimming stationary edges: {len(points)}")
+
 
 if __name__ == "__main__":
     main()
