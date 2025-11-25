@@ -11,6 +11,7 @@
 
 import os
 import glob
+import math
 from datetime import datetime
 
 
@@ -57,6 +58,35 @@ def trim_stationary_edges(points):
     # Return only the moving portion of the trip 
     return points[first_moving:last_moving + 1]
 
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """
+    Calculate the great-circle distance between two points on Earth.
+    Returns distance in kilometers.
+    """
+    # only doing this in kilometers because of 2B saying:
+    # Do not worry about the altitude. You can set that a 3 meters or something fixed.
+    # so i set it to km for consistency. does it matter? prob not. can it be changed to miles? yea.
+    # if it somehow relates to the tasks ahead, it can be easily converted as needed
+    # we would also need to change the variables like KNOTS_TO_KMH = 1.852 to KNOTS_TO_MPH = 1.15078
+    # and update other variables that are needed and related. so hopefully that wont happen.
+    R = 6371.0  # Earth's radius in kilometers
+    
+    # conv degrees to radians
+    lat1_rad = math.radians(lat1)
+    lon1_rad = math.radians(lon1)
+    lat2_rad = math.radians(lat2)
+    lon2_rad = math.radians(lon2)
+    
+    # diff
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    
+    # haversine formula
+    a = math.sin(dlat / 2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    
+    distance = R * c
+    return distance
 
 def calculate_trip_duration(points):
     if not points:
@@ -95,6 +125,78 @@ def calculate_trip_duration(points):
     # Compute the duration as a timedelta (end time minus start time)
     duration = finish_dt - start_dt
     print(f"Trip Duration: {duration}")
+
+    # ----------------------
+    # part 5 time estimation
+    # ----------------------
+    speed_threshold = 5.0
+    KNOTS_TO_KMH = 1.852
+    
+    started_moving = False
+    stopped_moving = False
+    estimated_start_gap = 0
+    estimated_end_gap = 0
+    
+    # check if recording started while in motion
+    check_window = min(5, len(points))
+    start_speeds = [p['speed'] for p in points[:check_window] if p.get('speed') is not None]
+    
+    if start_speeds and sum(start_speeds) / len(start_speeds) >= speed_threshold:
+        started_moving = True
+        avg_start_speed_knots = sum(start_speeds) / len(start_speeds)
+        avg_start_speed_kmh = avg_start_speed_knots * KNOTS_TO_KMH
+        
+        # look at distance over a larger window (first 10-20 points)
+        if len(points) >= 10:
+            # calculate distance from first point to 10th point
+            dist_km = haversine_distance(
+                points[0]['lat'], points[0]['lon'],
+                points[9]['lat'], points[9]['lon']
+            )
+            
+            if dist_km > 0.001 and avg_start_speed_kmh > 0:  # more than 1 meter
+                # estimate based on average speed: assume we started 5-10 seconds before
+                # use a conservative estimate of 5 seconds
+                estimated_start_gap = 5.0
+    
+    # check if recording stopped while in motion
+    end_speeds = [p['speed'] for p in points[-check_window:] if p.get('speed') is not None]
+    
+    if end_speeds and sum(end_speeds) / len(end_speeds) >= speed_threshold:
+        stopped_moving = True
+        avg_end_speed_knots = sum(end_speeds) / len(end_speeds)
+        avg_end_speed_kmh = avg_end_speed_knots * KNOTS_TO_KMH
+        
+        # look at distance over a larger window (last 10-20 points)
+        if len(points) >= 10:
+            # calculate distance from 10th-to-last point to last point
+            dist_km = haversine_distance(
+                points[-10]['lat'], points[-10]['lon'],
+                points[-1]['lat'], points[-1]['lon']
+            )
+            
+            if dist_km > 0.001 and avg_end_speed_kmh > 0:  # more than 1 meter
+                # estimate based on average speed: assume we continued 5-10 seconds after
+                # use a conservative estimate of 5 seconds
+                estimated_end_gap = 5.0
+    
+    total_estimated_gap = estimated_start_gap + estimated_end_gap
+    
+    # output results
+    print("\nTRIP DURATION ANALYSIS\n")
+    
+    # report in motion
+    if started_moving:
+        print("GPS recording started while vehicle was in motion!")
+        print(f"Estimated missing time at start: {estimated_start_gap:.2f} seconds")
+    else:
+        print("GPS recording started when vehicle was stationary")
+    
+    if stopped_moving:
+        print("GPS recording stopped while vehicle was still in motion!")
+        print(f"Estimated missing time at end: {estimated_end_gap:.2f} seconds")
+    else:
+        print("GPS recording stopped when vehicle was stationary")
    
     # Convert total duration into seconds as a float
     total_seconds = duration.total_seconds()
@@ -105,14 +207,34 @@ def calculate_trip_duration(points):
     # Convert seconds to hours
     total_hours = total_seconds / 3600
 
-    print(f"Trip Duration in Seconds: {total_seconds:.2f} seconds")
-    print(f"Trip Duration in Minutes: {total_minutes:.2f} minutes")
-    print(f"Trip Duration in Hours: {total_hours:.2f} hours")
-    print(f"Trip started at: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Trip finished at: {finish_dt.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Duration in total seconds: {total_seconds} seconds")
-    print(f"Duration in total minutes: {total_minutes} minutes")
-    print(f"Duration in total hours: {total_hours} hours")
+    # print(f"Trip Duration in Seconds: {total_seconds:.2f} seconds")
+    # print(f"Trip Duration in Minutes: {total_minutes:.2f} minutes")
+    # print(f"Trip Duration in Hours: {total_hours:.2f} hours")
+    # print(f"Trip started at: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+    # print(f"Trip finished at: {finish_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+    # print(f"Duration in total seconds: {total_seconds} seconds")
+    # print(f"Duration in total minutes: {total_minutes} minutes")
+    # print(f"Duration in total hours: {total_hours} hours")
+
+    # reformatted from above
+    print("\nRECORDED TRIP DURATION (from GPS timestamps):")
+    print(f"Start time: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"End time:   {finish_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Duration:   {total_seconds:.2f} seconds")
+    print(f"            {total_minutes:.2f} minutes")
+    print(f"            {total_hours:.2f} hours")
+    
+    # report estimated actual duration (if missing time detected)
+    if total_estimated_gap > 0:
+        estimated_total_seconds = total_seconds + total_estimated_gap
+        print()
+        print("ESTIMATED ACTUAL TRIP DURATION (including missing time):")
+        print(f"  Missing time at start: {estimated_start_gap:.2f} seconds")
+        print(f"  Missing time at end:   {estimated_end_gap:.2f} seconds")
+        print(f"  Total missing time:    {total_estimated_gap:.2f} seconds")
+        print(f"  Estimated total:       {estimated_total_seconds:.2f} seconds")
+        print(f"                         {estimated_total_seconds/60:.2f} minutes")
+        print(f"                         {estimated_total_seconds/3600:.2f} hours")
 
 def parse_nmea_coordinate(coord_str, direction):
     """
