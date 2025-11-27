@@ -770,8 +770,6 @@ def process_gps_file(input_file):
     Find all GPS files in specified folder and process each one.
     For each file:
         - Read and parse GPS data
-        - Trim stationary edges (A, F, G)
-        - Filter redundant points on straight segments (B)
         - Detect stops and left turns
         - Generate KML file with route and markers
     """
@@ -809,12 +807,6 @@ def main():
     
     for gps_file in gps_files:
         process_gps_file(gps_file)
-
-    #print('test')
-    #print(f"Read {len(gps_files)} GPS files.")
-
-    #print(f"Points after trimming stationary edges: {len(points)}")
-
 
 if __name__ == "__main__":
     main()
