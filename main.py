@@ -401,11 +401,30 @@ def parse_gpgga(line):
     
     if lat is None or lon is None:
         return None
-    
-    # Return coordinates as a simple dictionary
+
+    # Parse fix quality, number of satellites, and HDOP when available
+    try:
+        fix_quality = int(parts[6]) if parts[6] else 0
+    except:
+        fix_quality = 0
+
+    try:
+        num_sats = int(parts[7]) if parts[7] else 0
+    except:
+        num_sats = 0
+
+    try:
+        hdop = float(parts[8]) if parts[8] else None
+    except:
+        hdop = None
+
+    # Return coordinates and basic quality metrics
     return {
         'lat': lat,
-        'lon': lon
+        'lon': lon,
+        'fix': fix_quality,
+        'sats': num_sats,
+        'hdop': hdop
     }
 
 def read_gps_file(filename):
@@ -421,6 +440,7 @@ def read_gps_file(filename):
     # Open the file in read mode, using latin-1 encoding to handle special characters
     with open(filename, 'r', encoding='latin-1') as f:
         
+        last_gpgga = None
         for line in f:
             # Remove leading/trailing whitespace from the line
             line = line.strip()
@@ -441,13 +461,20 @@ def read_gps_file(filename):
                 # If the line is a GPRMC sentence, we parse it for full GPS data
                 if sentence.startswith('$GPRMC'):
                     data = parse_gprmc(sentence)
+                    # Attach most recent GPGGA quality info if available
+                    if data and last_gpgga:
+                        # Ensure keys exist but don't overwrite core lat/lon/datetime
+                        data['hdop'] = last_gpgga.get('hdop')
+                        data['sats'] = last_gpgga.get('sats')
+                        data['fix'] = last_gpgga.get('fix')
                     # Only add the point if parsing was successful (data is not None)
                     if data:
                         points.append(data)
-                # If the line is GPGGA, we could parse it for backup, but here we ignore it
                 elif sentence.startswith('$GPGGA'):
-                    data = parse_gpgga(sentence)
-                    # Currently not used to build points; could be extended if needed
+                    # Parse and remember latest GPGGA quality metrics to attach to next GPRMC
+                    gga = parse_gpgga(sentence)
+                    if gga:
+                        last_gpgga = gga
     
     # Report double-sentence fixes if any were found
     if double_sentence_count > 0:
@@ -534,6 +561,48 @@ def filter_position_outliers(points, max_speed_kmh=200.0):
               f"speed > {max_speed_kmh} km/h). Remaining: {len(cleaned)} points.")
     
     return cleaned
+
+
+def filter_by_quality(points, hdop_threshold=3.0, min_sats=4, require_fix=True):
+    """
+    Part E: Filter points by HDOP, satellite count, and fix quality.
+
+    If a point lacks all quality fields (`hdop`, `sats`, `fix`), we keep it.
+
+    Otherwise we remove points.
+    Returns the filtered list of points.
+    """
+    if not points:
+        return points
+
+    kept = []
+    removed = 0
+    for p in points:
+        hdop = p.get('hdop')
+        sats = p.get('sats')
+        fix = p.get('fix')
+
+        # If we lack any quality info, keep the point
+        if hdop is None and sats is None and fix is None:
+            kept.append(p)
+            continue
+
+        if hdop is not None and hdop > hdop_threshold:
+            removed += 1
+            continue
+        if sats is not None and sats < min_sats:
+            removed += 1
+            continue
+        if require_fix and fix is not None and fix < 1:
+            removed += 1
+            continue
+
+        kept.append(p)
+
+    if removed > 0:
+        print(f"  Part E: Filtered {removed} points by HDOP/sats/fix quality")
+
+    return kept
 
 def detect_stops_and_turns(points):
     """
@@ -715,6 +784,8 @@ def process_gps_file(input_file):
     print(f"  After trimming stationary edges: {len(points)} points")
     
     points = filter_position_outliers(points, max_speed_kmh=200.0)
+
+    points = filter_by_quality(points, hdop_threshold=3.0, min_sats=4, require_fix=True)
 
     stops, turns = detect_stops_and_turns(points)
     print(f"Detected {len(stops)} stops and {len(turns)} left turns")
