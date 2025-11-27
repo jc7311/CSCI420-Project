@@ -488,6 +488,53 @@ def angle_difference(prev_heading, curr_heading):
     
     return diff
 
+def filter_position_outliers(points, max_speed_kmh=200.0):
+    """
+    Part D: Filter out GPS points that imply impossible speeds between samples.
+    
+    If the distance between consecutive points, given the time difference, would
+    require the car to travel faster than max_speed_kmh, we treat the newer
+    point as junk (likely an antenna / GPS glitch) and skip it.
+    
+    Lane change can also count as left turn!
+    """
+    if len(points) < 2:
+        return points
+    
+    cleaned = [points[0]]
+    removed_count = 0
+    
+    for i in range(1, len(points)):
+        prev = cleaned[-1]
+        curr = points[i]
+ 
+        if prev.get('datetime') is None or curr.get('datetime') is None:
+
+            cleaned.append(curr)
+            continue
+        
+        dt = (curr['datetime'] - prev['datetime']).total_seconds()
+
+        if dt <= 0:
+            removed_count += 1
+            continue
+        
+        dist_km = haversine_distance(prev['lat'], prev['lon'],
+                                     curr['lat'], curr['lon'])
+        speed_kmh = dist_km / (dt / 3600.0)
+        
+        if speed_kmh > max_speed_kmh:
+            removed_count += 1
+            continue
+        
+        cleaned.append(curr)
+    
+    if removed_count > 0:
+        print(f"  Filtered {removed_count} position outliers (Part D, "
+              f"speed > {max_speed_kmh} km/h). Remaining: {len(cleaned)} points.")
+    
+    return cleaned
+
 def detect_stops_and_turns(points):
     """
     Analyze GPS points to detect:
@@ -667,7 +714,8 @@ def process_gps_file(input_file):
     points = trim_stationary_edges(points)
     print(f"  After trimming stationary edges: {len(points)} points")
     
-    
+    points = filter_position_outliers(points, max_speed_kmh=200.0)
+
     stops, turns = detect_stops_and_turns(points)
     print(f"Detected {len(stops)} stops and {len(turns)} left turns")
     
