@@ -207,15 +207,6 @@ def calculate_trip_duration(points):
     # Convert seconds to hours
     total_hours = total_seconds / 3600
 
-    # print(f"Trip Duration in Seconds: {total_seconds:.2f} seconds")
-    # print(f"Trip Duration in Minutes: {total_minutes:.2f} minutes")
-    # print(f"Trip Duration in Hours: {total_hours:.2f} hours")
-    # print(f"Trip started at: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
-    # print(f"Trip finished at: {finish_dt.strftime('%Y-%m-%d %H:%M:%S')}")
-    # print(f"Duration in total seconds: {total_seconds} seconds")
-    # print(f"Duration in total minutes: {total_minutes} minutes")
-    # print(f"Duration in total hours: {total_hours} hours")
-
     # reformatted from above
     print("\nRECORDED TRIP DURATION (from GPS timestamps):")
     print(f"Start time: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
