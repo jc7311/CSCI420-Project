@@ -231,12 +231,7 @@ def calculate_trip_duration(points):
 def split_double_sentences(line):
     """
     Part C: Detect and split Arduino double-sentence lines.
-    
-    The Arduino sometimes writes two NMEA sentences on the same line without a newline,
-    like: $GPRMC,...checksum$GPGGA,...checksum
-    
     This function detects this anomaly and splits them into separate sentences.
-    
     Returns: list of sentence strings (usually 1, but 2 if double-sentence detected)
     """
     # Look for the pattern: $GPRMC or $GPGGA followed by another $GP sequence
