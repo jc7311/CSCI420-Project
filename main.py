@@ -56,6 +56,7 @@ def trim_stationary_edges(points):
               f"and {n - 1 - last_moving} trailing stationary points.")
     
     # Return only the moving portion of the trip 
+    # GPS points without leading/trailing stationary points
     return points[first_moving:last_moving + 1]
 
 def haversine_distance(lat1, lon1, lat2, lon2):
@@ -227,6 +228,54 @@ def calculate_trip_duration(points):
         print(f"                         {estimated_total_seconds/60:.2f} minutes")
         print(f"                         {estimated_total_seconds/3600:.2f} hours")
 
+def split_double_sentences(line):
+    """
+    Part C: Detect and split Arduino double-sentence lines.
+    
+    The Arduino sometimes writes two NMEA sentences on the same line without a newline,
+    like: $GPRMC,...checksum$GPGGA,...checksum
+    
+    This function detects this anomaly and splits them into separate sentences.
+    
+    Returns: list of sentence strings (usually 1, but 2 if double-sentence detected)
+    """
+    # Look for the pattern: $GPRMC or $GPGGA followed by another $GP sequence
+    # without a proper line break
+    sentences = []
+    
+    # Check if line contains multiple NMEA sentences jammed together
+    # Pattern: $GPxxxx....*xx$GPyyyy (sentence ends with *checksum then immediately starts new $GP)
+    # Example: $GPRMC,221249.250,A,4305.1467,N,07740.8187,W,0.54,313.60,110925$GPGGA,221249.500,4305.1466,N,07740.8188,W,1,04,2.05,75.7,M,-34.4,M,,*67
+    # This example came from 2025_09_11__221355_gps_file.txt Line 23
+    import re
+    
+    # Find all NMEA sentence starts ($GPxxx)
+    matches = list(re.finditer(r'\$GP\w{3}', line))
+    
+    if len(matches) == 1:
+        # Normal case: only one sentence
+        sentences.append(line)
+    elif len(matches) >= 2:
+        # Multiple sentences jammed together
+        for i, match in enumerate(matches):
+            start = match.start()
+            if i < len(matches) - 1:
+                # Get up to the start of the next sentence
+                end = matches[i + 1].start()
+                sentence = line[start:end].rstrip('*')  # Remove trailing checksum separator if any
+            else:
+                # Last sentence: take to end of line
+                sentence = line[start:]
+            
+            if sentence.strip():
+                sentences.append(sentence.strip())
+    else:
+        # No proper sentence found, return original line
+        sentences.append(line)
+    
+    return sentences
+
+
 def parse_nmea_coordinate(coord_str, direction):
     """
     Converts NMEA coordinate format to decimal degrees. (DDMM.MMMM)
@@ -372,6 +421,7 @@ def read_gps_file(filename):
     """
 
     points = []  # List to store all parsed GPS points
+    double_sentence_count = 0  # Track how many double-sentences we encounter
 
     # Open the file in read mode, using latin-1 encoding to handle special characters
     with open(filename, 'r', encoding='latin-1') as f:
@@ -384,19 +434,33 @@ def read_gps_file(filename):
             if not line or not line.startswith('$GP'):
                 continue
             
-            # If the line is a GPRMC sentence, we parse it for full GPS data
-            if line.startswith('$GPRMC'):
-                data = parse_gprmc(line)
-                # Only add the point if parsing was successful (data is not None)
-                if data:
-                    points.append(data)
-            # If the line is GPGGA, we could parse it for backup, but here we ignore it
-            elif line.startswith('$GPGGA'):
-                data = parse_gpgga(line)
-                # Currently not used to build points; could be extended if needed
+            # Part C: Split double-sentences on the same line
+            sentences = split_double_sentences(line)
+            
+            # If we got multiple sentences, we found a double-sentence anomaly
+            if len(sentences) > 1:
+                double_sentence_count += 1
+            
+            # Parse each sentence (usually 1, but 2 if double-sentence was split)
+            for sentence in sentences:
+                # If the line is a GPRMC sentence, we parse it for full GPS data
+                if sentence.startswith('$GPRMC'):
+                    data = parse_gprmc(sentence)
+                    # Only add the point if parsing was successful (data is not None)
+                    if data:
+                        points.append(data)
+                # If the line is GPGGA, we could parse it for backup, but here we ignore it
+                elif sentence.startswith('$GPGGA'):
+                    data = parse_gpgga(sentence)
+                    # Currently not used to build points; could be extended if needed
+    
+    # Report double-sentence fixes if any were found
+    if double_sentence_count > 0:
+        print(f"  Part C: Found and split {double_sentence_count} double-sentence anomalies")
     
     # Return the list of parsed GPS points
     return points
+
 
 def normalize_angle(angle):
     """
@@ -595,15 +659,19 @@ def process_gps_file(input_file):
     Find all GPS files in specified folder and process each one.
     For each file:
         - Read and parse GPS data
+        - Trim stationary edges (A, F, G)
+        - Filter redundant points on straight segments (B)
         - Detect stops and left turns
         - Generate KML file with route and markers
     """
     print(f"Processing {input_file} ")
     
     points = read_gps_file(input_file)
+    print(f"  Read {len(points)} raw points")
+    
     points = trim_stationary_edges(points)
-
-    print(f"Read {len(points)} points")
+    print(f"  After trimming stationary edges: {len(points)} points")
+    
     
     stops, turns = detect_stops_and_turns(points)
     print(f"Detected {len(stops)} stops and {len(turns)} left turns")
